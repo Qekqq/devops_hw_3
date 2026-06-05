@@ -28,3 +28,7 @@ htmlcov/
 
 # DVC cache
 .dvc/cache/
+
+# Logs
+logs/
+*.log
