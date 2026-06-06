@@ -1,6 +1,10 @@
 name: CD
 
 on:
+  push:
+    branches:
+      - develop
+
   workflow_run:
     workflows:
       - CI
@@ -14,13 +18,14 @@ on:
 
 env:
   IMAGE_NAME: qekqq/mloops_api
+  IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   container-functional-tests:
     name: Run container functional tests
     runs-on: ubuntu-latest
 
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Log in to DockerHub
@@ -31,11 +36,24 @@ jobs:
 
       - name: Pull Docker image
         run: |
-          docker pull $IMAGE_NAME:latest
+          echo "Pulling image: $IMAGE_NAME:$IMAGE_TAG"
+
+          for i in {1..30}; do
+            if docker pull $IMAGE_NAME:$IMAGE_TAG; then
+              echo "Image pulled successfully"
+              exit 0
+            fi
+
+            echo "Image is not available yet. Waiting..."
+            sleep 10
+          done
+
+          echo "Failed to pull image: $IMAGE_NAME:$IMAGE_TAG"
+          exit 1
 
       - name: Run Docker container
         run: |
-          docker run -d --name diabetes-api -p 8000:8000 $IMAGE_NAME:latest
+          docker run -d --name diabetes-api -p 8000:8000 $IMAGE_NAME:$IMAGE_TAG
 
       - name: Wait for API startup
         run: |
