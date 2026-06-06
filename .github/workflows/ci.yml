@@ -9,6 +9,10 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: qekqq/mloops_api
 
 jobs:
   test:
@@ -33,8 +37,8 @@ jobs:
         run: |
           python -m pytest tests -v
 
-  docker-build:
-    name: Build Docker image
+  docker-build-and-push:
+    name: Build and push Docker image
     runs-on: ubuntu-latest
     needs: test
 
@@ -42,6 +46,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build Docker image
+      - name: Log in to DockerHub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image for pull request
+        if: github.event_name == 'pull_request'
         run: |
-          docker build -t diabetes-prediction-api .
+          docker build -t $IMAGE_NAME:pr-${{ github.event.pull_request.number }} .
+
+      - name: Build and push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}

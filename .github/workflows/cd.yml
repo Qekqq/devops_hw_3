@@ -1,0 +1,118 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+      - develop
+
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: qekqq/mloops_api
+
+jobs:
+  container-functional-tests:
+    name: Run container functional tests
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull Docker image
+        run: |
+          docker pull $IMAGE_NAME:latest
+
+      - name: Run Docker container
+        run: |
+          docker run -d --name diabetes-api -p 8000:8000 $IMAGE_NAME:latest
+
+      - name: Wait for API startup
+        run: |
+          for i in {1..30}; do
+            if docker exec diabetes-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"; then
+              echo "API is ready"
+              exit 0
+            fi
+
+            echo "Waiting for API..."
+            sleep 2
+          done
+
+          docker logs diabetes-api
+          exit 1
+
+      - name: Run functional API tests inside container
+        run: |
+          docker exec -i diabetes-api python - <<'PY'
+          import json
+          import urllib.request
+
+          health_response = urllib.request.urlopen(
+              "http://127.0.0.1:8000/health",
+              timeout=5,
+          )
+
+          assert health_response.status == 200
+
+          health_data = json.loads(health_response.read().decode("utf-8"))
+
+          assert health_data["status"] == "ok"
+          assert health_data["service"] == "diabetes-prediction-api"
+
+          payload = {
+              "Pregnancies": 6,
+              "Glucose": 148,
+              "BloodPressure": 72,
+              "SkinThickness": 35,
+              "Insulin": 0,
+              "BMI": 33.6,
+              "DiabetesPedigreeFunction": 0.627,
+              "Age": 50,
+          }
+
+          request = urllib.request.Request(
+              "http://127.0.0.1:8000/predict",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+
+          predict_response = urllib.request.urlopen(request, timeout=5)
+
+          assert predict_response.status == 200
+
+          predict_data = json.loads(predict_response.read().decode("utf-8"))
+
+          assert predict_data["prediction"] in [0, 1]
+          assert predict_data["label"] in [
+              "diabetes_detected",
+              "diabetes_not_detected",
+          ]
+
+          if predict_data["probability"] is not None:
+              assert 0 <= predict_data["probability"] <= 1
+
+          print("Functional container tests passed")
+          print(predict_data)
+          PY
+
+      - name: Show container logs
+        if: always()
+        run: |
+          docker logs diabetes-api || true
+
+      - name: Stop Docker container
+        if: always()
+        run: |
+          docker rm -f diabetes-api || true
