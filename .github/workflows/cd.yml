@@ -1,31 +1,24 @@
 name: CD
 
 on:
-  push:
-    branches:
-      - develop
-
   workflow_run:
     workflows:
       - CI
     types:
       - completed
-    branches:
-      - main
-      - develop
 
   workflow_dispatch:
 
 env:
   IMAGE_NAME: qekqq/mloops_api
-  IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'latest' }}
 
 jobs:
   container-functional-tests:
     name: Run container functional tests
     runs-on: ubuntu-latest
 
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Log in to DockerHub
