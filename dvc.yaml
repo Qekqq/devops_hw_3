@@ -1,0 +1,21 @@
+stages:
+  preprocess:
+    cmd: python -m src.data_preprocessing
+    deps:
+    - config.ini
+    - data/raw/diabetes.csv
+    - src/config.py
+    - src/data_preprocessing.py
+    - src/logger.py
+  train:
+    cmd: python -m src.train
+    deps:
+    - config.ini
+    - data/processed/train.csv
+    - data/processed/valid.csv
+    - src/config.py
+    - src/logger.py
+    - src/train.py
+    metrics:
+    - experiments/best_model/validation_metrics.json:
+        cache: false
