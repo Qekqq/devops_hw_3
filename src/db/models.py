@@ -1,0 +1,235 @@
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ENUM, JSONB
+from sqlalchemy.orm import relationship
+
+from src.db.database import Base
+
+
+user_role_enum = ENUM(
+    "user",
+    "admin",
+    name="user_role",
+    create_type=False,
+)
+
+prediction_label_enum = ENUM(
+    "detected",
+    "not_detected",
+    name="prediction_label",
+    create_type=False,
+)
+
+request_source_enum = ENUM(
+    "api",
+    "frontend",
+    "test",
+    name="request_source",
+    create_type=False,
+)
+
+dataset_split_enum = ENUM(
+    "train",
+    "valid",
+    "test",
+    name="dataset_split",
+    create_type=False,
+)
+
+model_role_enum = ENUM(
+    "champion",
+    "challenger",
+    "archived",
+    name="model_role",
+    create_type=False,
+)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    username = Column(String(100), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(user_role_enum, nullable=False, server_default=text("'user'"))
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    predictions = relationship("PredictionHistory", back_populates="user")
+    feedback_items = relationship("PredictionFeedback", back_populates="created_by_user")
+
+
+class Patient(Base):
+    __tablename__ = "patients"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    patient_code = Column(String(100), nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    predictions = relationship("PredictionHistory", back_populates="patient")
+
+
+class Dataset(Base):
+    __tablename__ = "datasets"
+
+    __table_args__ = (
+        UniqueConstraint("dataset_name", "dataset_version", name="uq_datasets_name_version"),
+    )
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+    dataset_name = Column(String(100), nullable=False)
+    dataset_version = Column(String(50), nullable=False)
+    source_path = Column(String(255))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    samples = relationship("DatasetSample", back_populates="dataset")
+    model_versions = relationship("ModelVersion", back_populates="trained_on_dataset")
+
+
+class DatasetSample(Base):
+    __tablename__ = "dataset_samples"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+
+    dataset_id = Column(
+        BigInteger,
+        ForeignKey("datasets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    split = Column(dataset_split_enum, nullable=False)
+
+    pregnancies = Column(Integer, nullable=False)
+    glucose = Column(Numeric(6, 3), nullable=False)
+    blood_pressure = Column(Numeric(6, 3), nullable=False)
+    skin_thickness = Column(Numeric(6, 3), nullable=False)
+    insulin = Column(Numeric(7, 3), nullable=False)
+    bmi = Column(Numeric(6, 3), nullable=False)
+    diabetes_pedigree_function = Column(Numeric(4, 3), nullable=False)
+    age = Column(Integer, nullable=False)
+
+    outcome = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    dataset = relationship("Dataset", back_populates="samples")
+
+
+class ModelVersion(Base):
+    __tablename__ = "model_versions"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False, unique=True)
+    artifact_path = Column(String(255), nullable=False)
+    preprocessing_version = Column(String(50))
+
+    trained_on_dataset_id = Column(
+        BigInteger,
+        ForeignKey("datasets.id", ondelete="SET NULL"),
+    )
+
+    accuracy_score = Column(Numeric(18, 16))
+    precision_score = Column(Numeric(18, 16))
+    recall_score = Column(Numeric(18, 16))
+    f1_score = Column(Numeric(18, 16))
+
+    params_json = Column(JSONB)
+
+    traffic_weight = Column(Integer, nullable=False, server_default=text("100"))
+    role = Column(model_role_enum, nullable=False, server_default=text("'challenger'"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    trained_on_dataset = relationship("Dataset", back_populates="model_versions")
+    predictions = relationship("PredictionHistory", back_populates="model_version")
+
+
+class PredictionHistory(Base):
+    __tablename__ = "prediction_history"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+
+    user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
+
+    patient_id = Column(
+        BigInteger,
+        ForeignKey("patients.id", ondelete="SET NULL"),
+    )
+
+    model_version_id = Column(
+        BigInteger,
+        ForeignKey("model_versions.id", ondelete="SET NULL"),
+    )
+
+    patient_code_snapshot = Column(String(100))
+    model_version_snapshot = Column(String(50))
+
+    pregnancies = Column(Integer, nullable=False)
+    glucose = Column(Numeric(6, 3), nullable=False)
+    blood_pressure = Column(Numeric(6, 3), nullable=False)
+    skin_thickness = Column(Numeric(6, 3), nullable=False)
+    insulin = Column(Numeric(7, 3), nullable=False)
+    bmi = Column(Numeric(6, 3), nullable=False)
+    diabetes_pedigree_function = Column(Numeric(4, 3), nullable=False)
+    age = Column(Integer, nullable=False)
+
+    prediction = Column(Integer, nullable=False)
+    probability = Column(Numeric(6, 5))
+    label = Column(prediction_label_enum, nullable=False)
+
+    request_source = Column(
+        request_source_enum,
+        nullable=False,
+        server_default=text("'frontend'"),
+    )
+    response_time_ms = Column(Integer)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    user = relationship("User", back_populates="predictions")
+    patient = relationship("Patient", back_populates="predictions")
+    model_version = relationship("ModelVersion", back_populates="predictions")
+
+    feedback = relationship(
+        "PredictionFeedback",
+        back_populates="prediction_history",
+        uselist=False,
+    )
+
+
+class PredictionFeedback(Base):
+    __tablename__ = "prediction_feedback"
+
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
+
+    prediction_history_id = Column(
+        BigInteger,
+        ForeignKey("prediction_history.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+
+    created_by_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
+
+    true_label = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    prediction_history = relationship("PredictionHistory", back_populates="feedback")
+    created_by_user = relationship("User", back_populates="feedback_items")
