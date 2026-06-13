@@ -1,18 +1,21 @@
 -- ============================================================
--- 03_seed.sql
+-- 02_seed.sql
 -- Initial reference data for DevOps HW 2 / Diabetes Predict
 --
 -- Назначение:
---   - добавить начальную активную версию модели;
---   - не содержит пользователей, потому что users.password_hash
---     должен создаваться через bcrypt в Python-скрипте.
+--   - добавить начальную версию модели из лабораторной работы №1;
+--   - сделать её champion-моделью;
+--   - сохранить метрики валидации;
+--   - сохранить гиперпараметры модели в params_json.
 -- ============================================================
+
 
 INSERT INTO model_versions (
     model_name,
     model_version,
     artifact_path,
     preprocessing_version,
+    trained_on_dataset_id,
     accuracy_score,
     precision_score,
     recall_score,
@@ -21,7 +24,6 @@ INSERT INTO model_versions (
     traffic_weight,
     role
 )
-
 VALUES (
     'LogisticRegressionTuned',
     'lab2-1.0.0',
@@ -42,7 +44,6 @@ VALUES (
     100,
     'champion'
 )
-
 ON CONFLICT (model_version) DO UPDATE
 SET
     model_name = EXCLUDED.model_name,
