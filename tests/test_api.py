@@ -41,7 +41,7 @@ def test_predict_returns_valid_prediction():
     assert "label" in data
 
     assert data["prediction"] in [0, 1]
-    assert data["label"] in ["diabetes_detected", "diabetes_not_detected"]
+    assert data["label"] in ["detected", "not_detected"]
 
     if data["probability"] is not None:
         assert 0 <= data["probability"] <= 1

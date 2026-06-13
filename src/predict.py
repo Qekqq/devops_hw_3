@@ -118,7 +118,7 @@ class DiabetesPredictor:
         result = {
             "prediction": prediction,
             "probability": probability,
-            "label": "diabetes_detected" if prediction == 1 else "diabetes_not_detected",
+            "label": "detected" if prediction == 1 else "not_detected",
         }
 
         self.logger.info("Prediction result: %s", result)
