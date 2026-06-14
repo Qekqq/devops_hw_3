@@ -1,5 +1,8 @@
 from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
+from src.db.database import get_session_factory
 from src.logger import get_logger
 from src.predict import DiabetesPredictor
 from src.schemas import DiabetesInput, HealthResponse, PredictionResponse
@@ -25,6 +28,30 @@ def health_check() -> HealthResponse:
         status="ok",
         service="diabetes-prediction-api",
     )
+
+
+@app.get("/db/health")
+def database_health_check() -> dict[str, str]:
+    """
+    Проверяет соединение API с PostgreSQL.
+    """
+    try:
+        session_factory = get_session_factory()
+
+        with session_factory() as db:
+            db.execute(text("SELECT 1"))
+
+        return {
+            "status": "ok",
+            "database": "connected",
+        }
+
+    except (RuntimeError, SQLAlchemyError) as error:
+        logger.error("Database health check failed: %s", error)
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection failed",
+        )
 
 
 @app.post("/predict", response_model=PredictionResponse)
