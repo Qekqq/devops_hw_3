@@ -110,10 +110,10 @@ class ModelTrainer:
 
         metrics = {
             "model_name": self.selected_model_name,
-            "accuracy": float(accuracy_score(y_valid, y_pred)),
-            "precision": float(precision_score(y_valid, y_pred)),
-            "recall": float(recall_score(y_valid, y_pred)),
-            "f1": float(f1_score(y_valid, y_pred)),
+            "accuracy_score": float(accuracy_score(y_valid, y_pred)),
+            "precision_score": float(precision_score(y_valid, y_pred)),
+            "recall_score": float(recall_score(y_valid, y_pred)),
+            "f1_score": float(f1_score(y_valid, y_pred)),
             "params": {
                 "C": 1,
                 "penalty": "l1",

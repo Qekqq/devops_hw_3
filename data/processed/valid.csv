@@ -1,4 +1,4 @@
-Pregnancies,Glucose,BloodPressure,SkinThickness,Insulin,BMI,DiabetesPedigreeFunction,Age,Outcome
+pregnancies,glucose,blood_pressure,skin_thickness,insulin,bmi,diabetes_pedigree_function,age,outcome
 4,137,84.0,30.0,126.0,31.2,0.252,30,0
 2,87,72.0,23.0,126.0,28.9,0.773,25,0
 0,102,78.0,40.0,90.0,34.5,0.238,24,0

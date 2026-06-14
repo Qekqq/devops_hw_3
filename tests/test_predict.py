@@ -4,14 +4,14 @@ from src.predict import DiabetesPredictor
 
 
 VALID_INPUT = {
-    "Pregnancies": 6,
-    "Glucose": 148,
-    "BloodPressure": 72,
-    "SkinThickness": 35,
-    "Insulin": 0,
-    "BMI": 33.6,
-    "DiabetesPedigreeFunction": 0.627,
-    "Age": 50,
+    "pregnancies": 6,
+    "glucose": 148,
+    "blood_pressure": 72,
+    "skin_thickness": 35,
+    "insulin": 0,
+    "bmi": 33.6,
+    "diabetes_pedigree_function": 0.627,
+    "age": 50,
 }
 
 
@@ -26,14 +26,14 @@ def test_predictor_has_expected_feature_columns():
     predictor = DiabetesPredictor()
 
     expected_columns = [
-        "Pregnancies",
-        "Glucose",
-        "BloodPressure",
-        "SkinThickness",
-        "Insulin",
-        "BMI",
-        "DiabetesPedigreeFunction",
-        "Age",
+        "pregnancies",
+        "glucose",
+        "blood_pressure",
+        "skin_thickness",
+        "insulin",
+        "bmi",
+        "diabetes_pedigree_function",
+        "age",
     ]
 
     assert predictor.feature_columns == expected_columns
@@ -46,7 +46,7 @@ def test_prepare_input_replaces_zero_values_with_train_medians():
 
     assert prepared_input.shape == (1, 8)
 
-    assert prepared_input.loc[0, "Insulin"] == predictor.train_medians["Insulin"]
+    assert prepared_input.loc[0, "insulin"] == predictor.train_medians["insulin"]
 
 
 def test_predict_returns_valid_result():
@@ -69,7 +69,7 @@ def test_predict_raises_error_for_missing_column():
     predictor = DiabetesPredictor()
 
     invalid_input = VALID_INPUT.copy()
-    invalid_input.pop("Age")
+    invalid_input.pop("age")
 
     with pytest.raises(ValueError, match="Missing input columns"):
         predictor.predict(invalid_input)

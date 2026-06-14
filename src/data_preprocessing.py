@@ -5,6 +5,8 @@ from sklearn.model_selection import train_test_split
 from src.config import load_config, get_path, get_zero_as_missing_columns
 from src.logger import get_logger
 
+from src.features import RAW_TO_CANONICAL_COLUMNS, FEATURE_COLUMNS, TARGET_COLUMN
+
 
 class DataPreprocessor:
     """
@@ -30,7 +32,8 @@ class DataPreprocessor:
 
     def load_data(self) -> pd.DataFrame:
         """
-        Загружает исходный датасет.
+        Загружает исходный датасет и приводит названия колонок
+        к единому внутреннему формату проекта.
         """
         self.logger.info("Loading raw dataset from %s", self.raw_data_path)
 
@@ -38,8 +41,23 @@ class DataPreprocessor:
             raise FileNotFoundError(f"Raw dataset was not found: {self.raw_data_path}")
 
         df = pd.read_csv(self.raw_data_path)
+        df = df.rename(columns=RAW_TO_CANONICAL_COLUMNS)
+
+        required_columns = FEATURE_COLUMNS + [TARGET_COLUMN]
+
+        missing_columns = [
+            column for column in required_columns
+            if column not in df.columns
+        ]
+
+        if missing_columns:
+            raise ValueError(f"Missing required columns after renaming: {missing_columns}")
+
+        df = df[required_columns]
 
         self.logger.info("Raw dataset loaded successfully. Shape: %s", df.shape)
+        self.logger.info("Dataset columns after renaming: %s", list(df.columns))
+
         return df
 
     def split_data(

@@ -128,14 +128,14 @@ class DiabetesPredictor:
 
 if __name__ == "__main__":
     example_input = {
-        "Pregnancies": 6,
-        "Glucose": 148,
-        "BloodPressure": 72,
-        "SkinThickness": 35,
-        "Insulin": 0,
-        "BMI": 33.6,
-        "DiabetesPedigreeFunction": 0.627,
-        "Age": 50,
+        "pregnancies": 6,
+        "glucose": 148,
+        "blood_pressure": 72,
+        "skin_thickness": 35,
+        "insulin": 0,
+        "bmi": 33.6,
+        "diabetes_pedigree_function": 0.627,
+        "age": 50,
     }
 
     predictor = DiabetesPredictor()
