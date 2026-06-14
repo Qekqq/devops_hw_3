@@ -1,30 +1,73 @@
-# MLOps Diabetes Prediction API
+# DevOps HW 2 — Diabetes Prediction API with PostgreSQL
 
-Проект выполнен в рамках лабораторной работы по модулю **DevOps**.
+## 1. Описание проекта
 
-Цель проекта — разработать ML-модель для бинарной классификации наличия диабета, оформить код в виде воспроизводимого пайплайна, реализовать API-сервис для получения предсказаний, покрыть проект тестами, контейнеризировать приложение с помощью Docker и настроить CI/CD pipeline.
+Проект реализован в рамках лабораторной работы №2 по курсу DevOps / Инфраструктура больших данных.
 
-## Ссылки
+Тема лабораторной работы: **«Взаимодействие с источниками данных»**.
 
-* GitHub repository: https://github.com/Qekqq/mloops
-* DockerHub image: https://hub.docker.com/r/qekqq/mloops_api
+Цель работы — реализовать взаимодействие сервиса машинного обучения с базой данных, обеспечить отсутствие явно прописанных секретов в исходном коде, переиспользовать CI/CD pipeline и проверить работу приложения через Docker Compose.
 
-## Стек технологий
+В качестве источника данных по варианту используется **PostgreSQL**.
 
-* Python 3.11
-* pandas
-* numpy
-* scikit-learn
-* FastAPI
-* Uvicorn
-* pytest
-* DVC
-* Docker
-* Docker Compose
-* GitHub Actions
-* DockerHub
+Проект представляет собой API-сервис для предсказания риска диабета на основе медицинских признаков пациента. Модель машинного обучения обёрнута в FastAPI-сервис, контейнеризована через Docker и запускается совместно с PostgreSQL через Docker Compose.
 
-## Структура проекта
+## 2. Ссылки
+
+GitHub repository:
+
+```text
+https://github.com/Qekqq/devops_hw_2
+```
+
+DockerHub image:
+
+```text
+https://hub.docker.com/repository/docker/qekqq/devops_hw_2_api/general
+```
+
+Docker image name:
+
+```text
+qekqq/devops_hw_2_api
+```
+
+## 3. Основная функциональность
+
+В проекте реализовано:
+
+* FastAPI-сервис для инференса ML-модели;
+* PostgreSQL-база данных для хранения данных проекта;
+* схема БД с таблицами для пользователей, пациентов, датасетов, моделей и истории прогнозов;
+* сохранение результатов работы модели в таблицу `prediction_history`;
+* загрузка обработанных train/valid/test данных в таблицы `datasets` и `dataset_samples`;
+* хранение параметров подключения к БД через переменные окружения;
+* Docker Compose для запуска API и PostgreSQL;
+* CI pipeline для тестирования, сборки и публикации Docker image;
+* CD pipeline для запуска контейнеров и функционального тестирования;
+* автоматизированные тесты через pytest.
+
+## 4. Стек технологий
+
+В проекте использовались:
+
+* Python 3.11;
+* FastAPI;
+* Uvicorn;
+* Pydantic;
+* pandas;
+* numpy;
+* scikit-learn;
+* SQLAlchemy;
+* psycopg2-binary;
+* PostgreSQL 16;
+* Docker;
+* Docker Compose;
+* pytest;
+* GitHub Actions;
+* DockerHub.
+
+## 5. Структура проекта
 
 ```text
 .
@@ -39,21 +82,23 @@
 │       ├── train.csv
 │       ├── valid.csv
 │       └── test.csv
+├── db/
+│   ├── 01_schema.sql
+│   └── 02_seed.sql
 ├── experiments/
-│   ├── best_model/
-│   │   ├── model.joblib
-│   │   ├── validation_metrics.json
-│   │   └── test_metrics.json
-│   ├── logistic_regression_tuned/
-│   └── decision_tree_tuned/
-├── notebooks/
-│   ├── 01_eda_preprocessing_split.ipynb
-│   ├── 04_hyperparameter_tuning.ipynb
-│   └── 05_model_comparison.ipynb
+│   └── best_model/
+│       ├── model.joblib
+│       └── validation_metrics.json
 ├── src/
+│   ├── db/
+│   │   ├── database.py
+│   │   ├── load_dataset.py
+│   │   ├── models.py
+│   │   └── repositories.py
 │   ├── app.py
 │   ├── config.py
 │   ├── data_preprocessing.py
+│   ├── features.py
 │   ├── logger.py
 │   ├── predict.py
 │   ├── schemas.py
@@ -63,183 +108,151 @@
 │   ├── test_data_preprocessing.py
 │   ├── test_predict.py
 │   └── test_train.py
+├── .dockerignore
+├── .gitignore
 ├── config.ini
-├── dvc.yaml
-├── dvc.lock
 ├── Dockerfile
 ├── docker-compose.yml
-├── Makefile
-├── requirements.txt
-└── README.md
+├── README.md
+└── requirements.txt
 ```
 
-## Описание ML-задачи
+## 6. Конфигурация проекта
 
-В проекте решается задача бинарной классификации: определить наличие диабета у пациента на основе медицинских признаков.
+Основная конфигурация проекта находится в файле `config.ini`.
 
-Целевая переменная:
-
-```text
-Outcome
-```
-
-Классы:
-
-```text
-0 — not_detected
-1 — detected
-```
+В рамках лабораторной работы №2 признаки и метрики были приведены к единому формату именования.
 
 Используемые признаки:
 
 ```text
-Pregnancies
-Glucose
-BloodPressure
-SkinThickness
-Insulin
-BMI
-DiabetesPedigreeFunction
-Age
+pregnancies
+glucose
+blood_pressure
+skin_thickness
+insulin
+bmi
+diabetes_pedigree_function
+age
 ```
 
-## Подготовка данных
-
-Подготовка данных реализована в модуле:
+Целевая переменная:
 
 ```text
-src/data_preprocessing.py
+outcome
 ```
 
-Основные шаги:
-
-* загрузка исходного датасета;
-* разделение на train / validation / test;
-* обработка нулевых значений в медицинских признаках;
-* замена нулевых значений медианами, рассчитанными по train-выборке;
-* сохранение обработанных данных в `data/processed`.
-
-Запуск:
-
-```bash
-python -m src.data_preprocessing
-```
-
-## Обучение модели
-
-Обучение модели реализовано в модуле:
+Используемые метрики:
 
 ```text
-src/train.py
+accuracy_score
+precision_score
+recall_score
+f1_score
 ```
 
-В качестве итоговой модели используется:
+## 7. Переменные окружения
+
+Параметры подключения к PostgreSQL не хранятся в исходном коде. Они передаются через переменные окружения.
+
+Для локального запуска необходимо создать файл `.env` в корне проекта.
+
+Пример `.env`:
+
+```env
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=diabetes
+POSTGRES_USER=diabetes_owner
+POSTGRES_PASSWORD=your_local_password
+```
+
+Файл `.env` не должен попадать в Git.
+
+В GitHub Actions аналогичные значения хранятся в Repository Secrets:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
+```
+
+## 8. База данных PostgreSQL
+
+В проекте используется PostgreSQL 16.
+
+Схема БД создаётся автоматически при первом запуске контейнера PostgreSQL через SQL-скрипты из директории `db/`.
+
+Файлы инициализации:
+
+```text
+db/01_schema.sql
+db/02_seed.sql
+```
+
+Основные таблицы:
+
+```text
+users
+patients
+datasets
+dataset_samples
+model_versions
+prediction_history
+prediction_feedback
+```
+
+Таблица `model_versions` хранит сведения о версии модели, метриках и роли модели. В рамках проекта seed-скрипт добавляет champion-модель:
 
 ```text
 LogisticRegressionTuned
 ```
 
-Модель сохраняется в:
+Таблица `prediction_history` хранит результаты вызова `/predict`.
 
-```text
-experiments/best_model/model.joblib
+Таблица `dataset_samples` хранит подготовленные train/valid/test строки датасета.
+
+## 9. Запуск через Docker Compose
+
+Для запуска приложения и базы данных используется Docker Compose.
+
+Команда запуска:
+
+```powershell
+docker compose up -d --build
 ```
 
-Метрики сохраняются в:
+Проверить состояние контейнеров:
 
-```text
-experiments/best_model/validation_metrics.json
+```powershell
+docker compose ps
 ```
 
-Запуск обучения:
+Остановить контейнеры:
 
-```bash
-python -m src.train
+```powershell
+docker compose down
 ```
 
-## Текущие метрики модели
+Остановить контейнеры и удалить volume PostgreSQL:
 
-На validation-выборке:
-
-```text
-accuracy: 0.7931
-f1-score: 0.7333
-model_name: LogisticRegressionTuned
+```powershell
+docker compose down -v
 ```
 
-Метрики можно посмотреть через DVC:
+## 10. API endpoints
 
-```bash
-dvc metrics show
+### GET `/health`
+
+Проверяет состояние API-сервиса.
+
+Пример запроса:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
 ```
-
-## DVC pipeline
-
-В проекте используется DVC для описания воспроизводимого ML-пайплайна.
-
-Файл пайплайна:
-
-```text
-dvc.yaml
-```
-
-Пайплайн состоит из этапов:
-
-```text
-preprocess → train
-```
-
-Проверить состояние DVC:
-
-```bash
-dvc status
-```
-
-Запустить воспроизведение пайплайна:
-
-```bash
-dvc repro
-```
-
-Показать метрики:
-
-```bash
-dvc metrics show
-```
-
-Примечание: в рамках учебной лабораторной данные и модель остаются в Git, так как датасет небольшой. В промышленном проекте исходные данные и ML-артефакты следует хранить во внешнем приватном DVC remote-хранилище, а в Git помещать только код, конфигурации и DVC-метафайлы.
-
-## API-сервис
-
-API реализован на FastAPI.
-
-Основной файл:
-
-```text
-src/app.py
-```
-
-Запуск API локально:
-
-```bash
-uvicorn src.app:app --host 127.0.0.1 --port 8000 --reload
-```
-
-После запуска документация доступна по адресу:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-### Endpoint `/health`
-
-Метод:
-
-```text
-GET /health
-```
-
-Проверяет состояние API.
 
 Пример ответа:
 
@@ -250,28 +263,42 @@ GET /health
 }
 ```
 
-### Endpoint `/predict`
+### GET `/db/health`
 
-Метод:
-
-```text
-POST /predict
-```
-
-Выполняет предсказание наличия диабета.
+Проверяет подключение API к PostgreSQL.
 
 Пример запроса:
 
+```powershell
+Invoke-RestMethod http://localhost:8000/db/health
+```
+
+Пример ответа:
+
 ```json
 {
-  "Pregnancies": 6,
-  "Glucose": 148,
-  "BloodPressure": 72,
-  "SkinThickness": 35,
-  "Insulin": 0,
-  "BMI": 33.6,
-  "DiabetesPedigreeFunction": 0.627,
-  "Age": 50
+  "status": "ok",
+  "database": "connected"
+}
+```
+
+### POST `/predict`
+
+Выполняет прогноз риска диабета и сохраняет результат в PostgreSQL.
+
+Пример входных данных:
+
+```json
+{
+  "patient_code": "PAT-001",
+  "pregnancies": 6,
+  "glucose": 148,
+  "blood_pressure": 72,
+  "skin_thickness": 35,
+  "insulin": 0,
+  "bmi": 33.6,
+  "diabetes_pedigree_function": 0.627,
+  "age": 50
 }
 ```
 
@@ -285,21 +312,98 @@ POST /predict
 }
 ```
 
-## Тестирование
+После успешного вызова `/predict` запись сохраняется в таблицу `prediction_history`.
 
-Проект покрыт тестами с использованием pytest.
+## 11. Проверка записи прогноза в БД
 
-Тестируются:
+Подключиться к PostgreSQL:
 
-* API endpoints;
-* модуль предсказания;
-* preprocessing pipeline;
-* training pipeline.
+```powershell
+docker exec -it devops_hw_2_db psql -U diabetes_owner -d diabetes
+```
+
+Проверить последние прогнозы:
+
+```sql
+SELECT
+    id,
+    patient_code_snapshot,
+    prediction,
+    probability,
+    label,
+    request_source,
+    response_time_ms,
+    created_at
+FROM prediction_history
+ORDER BY created_at DESC
+LIMIT 5;
+```
+
+Пример результата:
+
+```text
+id | patient_code_snapshot | prediction | probability | label    | request_source | response_time_ms
+1  | PAT-001               | 1          | 0.81466     | detected | api            | 12
+```
+
+## 12. Загрузка датасета в PostgreSQL
+
+Для загрузки подготовленных train/valid/test данных используется скрипт:
+
+```text
+src/db/load_dataset.py
+```
+
+Скрипт загружает данные из:
+
+```text
+data/processed/train.csv
+data/processed/valid.csv
+data/processed/test.csv
+```
+
+Команда запуска внутри API-контейнера:
+
+```powershell
+docker compose exec diabetes-api python -m src.db.load_dataset
+```
+
+Проверка таблицы `datasets`:
+
+```sql
+SELECT id, dataset_name, dataset_version, source_path, created_at
+FROM datasets;
+```
+
+Проверка количества строк по split:
+
+```sql
+SELECT split, COUNT(*) AS rows_count
+FROM dataset_samples
+GROUP BY split
+ORDER BY split;
+```
+
+Ожидаемый результат:
+
+```text
+train | 536
+valid | 116
+test  | 116
+```
+
+Суммарно:
+
+```text
+768 rows
+```
+
+## 13. Локальный запуск тестов
 
 Запуск всех тестов:
 
-```bash
-python -m pytest tests -v
+```powershell
+pytest
 ```
 
 Ожидаемый результат:
@@ -308,172 +412,140 @@ python -m pytest tests -v
 20 passed
 ```
 
-## Docker
-
-Проект контейнеризован с помощью Docker.
-
-Сборка и запуск через Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-После запуска API доступно по адресу:
+Тестами покрыты:
 
 ```text
-http://127.0.0.1:8000/docs
+tests/test_api.py
+tests/test_data_preprocessing.py
+tests/test_predict.py
+tests/test_train.py
 ```
 
-Остановка контейнера:
+## 14. CI pipeline
 
-```bash
-docker compose down
+CI pipeline описан в файле:
+
+```text
+.github/workflows/ci.yml
 ```
 
-## DockerHub
+CI запускается при:
+
+```text
+pull_request в main
+push в develop
+push в main
+workflow_dispatch
+```
+
+CI pipeline выполняет:
+
+1. Checkout repository.
+2. Установку Python 3.11.
+3. Установку зависимостей из `requirements.txt`.
+4. Запуск unit-тестов через pytest.
+5. Сборку Docker image.
+6. Публикацию Docker image в DockerHub.
+
+Используемый Docker image:
+
+```text
+qekqq/devops_hw_2_api
+```
+
+Теги:
+
+```text
+latest
+commit_sha
+```
+
+## 15. CD pipeline
+
+CD pipeline описан в файле:
+
+```text
+.github/workflows/cd.yml
+```
+
+CD запускается после успешного CI pipeline через `workflow_run`, а также может быть запущен вручную через `workflow_dispatch`.
+
+CD pipeline выполняет:
+
+1. Checkout repository.
+2. Авторизацию в DockerHub.
+3. Проверку обязательных GitHub Secrets.
+4. Pull Docker image из DockerHub.
+5. Создание `.env` файла на runner.
+6. Создание временного `docker-compose.cd.yml`.
+7. Запуск FastAPI и PostgreSQL через Docker Compose.
+8. Проверку `/health`.
+9. Проверку `/db/health`.
+10. Функциональный тест `/predict`.
+11. Загрузку processed-датасета в PostgreSQL.
+12. Проверку записей в `prediction_history`.
+13. Проверку записей в `dataset_samples`.
+14. Вывод статуса сервисов и логов.
+15. Остановку контейнеров.
+
+Таким образом, CD pipeline проверяет не только API, но и полноценную интеграцию сервиса модели с PostgreSQL.
+
+## 16. Безопасность конфигурации
+
+В исходном коде отсутствуют явно прописанные пары логин/пароль, адрес/порт сервера базы данных и токены доступа.
+
+Параметры подключения к БД передаются через:
+
+```text
+.env
+GitHub Repository Secrets
+environment variables
+```
+
+Файл `src/db/database.py` получает значения из переменных окружения:
+
+```text
+POSTGRES_HOST
+POSTGRES_PORT
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
+```
+
+Это позволяет запускать один и тот же код в локальной среде и в GitHub Actions без хранения секретов в репозитории.
+
+## 17. DockerHub
 
 Docker image публикуется в DockerHub:
 
 ```text
-qekqq/mloops_api
+qekqq/devops_hw_2_api
 ```
 
-Pull последней версии образа:
+Команда pull:
 
-```bash
-docker pull qekqq/mloops_api:latest
+```powershell
+docker pull qekqq/devops_hw_2_api:latest
 ```
 
-Запуск контейнера из DockerHub image:
+## 18. Результаты работы
 
-```bash
-docker run -d --name mloops-api -p 8000:8000 qekqq/mloops_api:latest
-```
+В результате лабораторной работы №2 было реализовано:
 
-После запуска API доступно по адресу:
+* взаимодействие FastAPI ML-сервиса с PostgreSQL;
+* сохранение результата работы модели в БД;
+* хранение подготовленных train/valid/test данных в БД;
+* отсутствие хардкода секретов в исходном коде;
+* запуск API и PostgreSQL через Docker Compose;
+* CI pipeline для тестирования, сборки и публикации Docker image;
+* CD pipeline для функционального тестирования API и БД;
+* публикация Docker image в отдельный DockerHub-репозиторий лабораторной работы №2.
 
-```text
-http://127.0.0.1:8000/docs
-```
+## 19. Вывод
 
-Остановка и удаление контейнера:
+В ходе лабораторной работы был расширен ML-сервис Diabetes Prediction API: к приложению была подключена PostgreSQL-база данных, реализовано сохранение результатов инференса модели и загрузка подготовленных датасетов.
 
-```bash
-docker rm -f mloops-api
-```
+Сервис модели взаимодействует с базой данных через SQLAlchemy, параметры подключения передаются через переменные окружения и GitHub Secrets. Приложение запускается через Docker Compose, что обеспечивает воспроизводимость инфраструктуры.
 
-## CI/CD
+CI/CD pipeline подтверждает корректность проекта: unit-тесты проходят успешно, Docker image публикуется в DockerHub, а CD pipeline запускает API и PostgreSQL, выполняет функциональные проверки `/health`, `/db/health`, `/predict`, а также проверяет наличие записей в таблицах `prediction_history` и `dataset_samples`.
 
-CI/CD реализован с помощью GitHub Actions.
-
-Workflow-файлы:
-
-```text
-.github/workflows/ci.yml
-.github/workflows/cd.yml
-```
-
-### CI pipeline
-
-CI запускается при push / pull request в ветки `develop` и `main`.
-
-CI выполняет:
-
-1. checkout репозитория;
-2. установку Python 3.11;
-3. установку зависимостей;
-4. запуск pytest-тестов;
-5. сборку Docker image;
-6. push Docker image в DockerHub.
-
-Docker image публикуется с двумя тегами:
-
-```text
-latest
-<commit_sha>
-```
-
-### CD pipeline
-
-CD pipeline запускается после успешного CI, а также может запускаться для ветки `develop`.
-
-CD выполняет:
-
-1. авторизацию в DockerHub;
-2. pull Docker image;
-3. запуск Docker container;
-4. ожидание старта API;
-5. функциональный тест `GET /health`;
-6. функциональный тест `POST /predict`;
-7. вывод логов контейнера;
-8. остановку и удаление контейнера.
-
-Функциональные тесты выполняются внутри запущенного контейнера.
-
-## Конфигурация
-
-Основные параметры проекта вынесены в:
-
-```text
-config.ini
-```
-
-В конфигурации указываются:
-
-* пути к данным;
-* параметры разбиения выборки;
-* целевая колонка;
-* признаки, где нулевые значения считаются пропусками;
-* гиперпараметры модели.
-
-## Быстрый запуск проекта
-
-Установить зависимости:
-
-```bash
-pip install -r requirements.txt
-```
-
-Запустить preprocessing:
-
-```bash
-python -m src.data_preprocessing
-```
-
-Обучить модель:
-
-```bash
-python -m src.train
-```
-
-Запустить тесты:
-
-```bash
-python -m pytest tests -v
-```
-
-Запустить API:
-
-```bash
-uvicorn src.app:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Запустить через Docker:
-
-```bash
-docker compose up --build
-```
-
-## Результат
-
-В результате работы был реализован полный учебный MLOps pipeline:
-
-* подготовка данных;
-* обучение и сохранение ML-модели;
-* API-сервис для инференса;
-* тестирование кода;
-* DVC pipeline;
-* Docker-контейнеризация;
-* публикация Docker image в DockerHub;
-* CI pipeline для тестов, сборки и публикации image;
-* CD pipeline для запуска контейнера и функционального тестирования.
