@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: qekqq/devops_hw_2_api
+  IMAGE_NAME: qekqq/devops_hw_3_api
   IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'latest' }}
 
 jobs:
@@ -92,7 +92,7 @@ jobs:
 
             db:
               image: postgres:16
-              container_name: devops_hw_2_db
+              container_name: devops_hw_3_db
               env_file:
                 - .env
               ports:
