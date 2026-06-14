@@ -1,8 +1,9 @@
-import os
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+from src.secrets.vault_client import get_database_secrets
 
 
 Base = declarative_base()
@@ -11,35 +12,35 @@ _engine = None
 _session_factory = None
 
 
-def _get_required_env(name: str) -> str:
-    value = os.getenv(name)
+def build_database_url(database_settings: dict[str, str]) -> str:
+    """
+    Формирует SQLAlchemy URL для подключения к PostgreSQL.
 
-    if value is None or value.strip() == "":
-        raise RuntimeError(f"Environment variable {name} is required")
+    Данные подключения приходят из Hashicorp Vault.
+    """
+    user = quote_plus(database_settings["POSTGRES_USER"])
+    password = quote_plus(database_settings["POSTGRES_PASSWORD"])
+    host = database_settings["POSTGRES_HOST"]
+    port = database_settings["POSTGRES_PORT"]
+    database = database_settings["POSTGRES_DB"]
 
-    return value
-
-
-def get_database_url() -> str:
-    host = _get_required_env("POSTGRES_HOST")
-    port = _get_required_env("POSTGRES_PORT")
-    database = _get_required_env("POSTGRES_DB")
-    user = _get_required_env("POSTGRES_USER")
-    password = _get_required_env("POSTGRES_PASSWORD")
-
-    return (
-        "postgresql+psycopg2://"
-        f"{quote_plus(user)}:{quote_plus(password)}"
-        f"@{host}:{port}/{database}"
-    )
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
 
 
 def get_engine():
+    """
+    Возвращает SQLAlchemy engine.
+
+    Engine создаётся лениво, чтобы секреты из Vault читались только при реальном обращении к БД.
+    """
     global _engine
 
     if _engine is None:
+        database_settings = get_database_secrets()
+        database_url = build_database_url(database_settings)
+
         _engine = create_engine(
-            get_database_url(),
+            database_url,
             pool_pre_ping=True,
         )
 
@@ -47,6 +48,9 @@ def get_engine():
 
 
 def get_session_factory():
+    """
+    Возвращает фабрику SQLAlchemy-сессий.
+    """
     global _session_factory
 
     if _session_factory is None:
@@ -60,6 +64,9 @@ def get_session_factory():
 
 
 def get_db():
+    """
+    FastAPI dependency для получения сессии БД.
+    """
     session_factory = get_session_factory()
     db = session_factory()
 
