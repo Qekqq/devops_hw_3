@@ -15,7 +15,7 @@ env:
 
 jobs:
   compose-functional-tests:
-    name: Run docker-compose functional tests
+    name: Run docker-compose functional tests with Vault
     runs-on: ubuntu-latest
 
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
@@ -37,10 +37,12 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
         run: |
           test -n "$POSTGRES_DB"
           test -n "$POSTGRES_USER"
           test -n "$POSTGRES_PASSWORD"
+          test -n "$VAULT_TOKEN"
 
       - name: Pull Docker image
         run: |
@@ -64,6 +66,7 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
         run: |
           cat > .env <<EOF
           POSTGRES_HOST=db
@@ -71,6 +74,11 @@ jobs:
           POSTGRES_DB=$POSTGRES_DB
           POSTGRES_USER=$POSTGRES_USER
           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+
+          VAULT_ADDR=http://vault:8200
+          VAULT_TOKEN=$VAULT_TOKEN
+          VAULT_KV_MOUNT=secret
+          VAULT_DB_SECRET_PATH=database/postgres
           EOF
 
       - name: Create CD docker-compose file
@@ -79,16 +87,23 @@ jobs:
           services:
             diabetes-api:
               image: ${IMAGE_NAME}:${IMAGE_TAG}
-              container_name: diabetes-api
+              container_name: devops_hw_3_api
               env_file:
                 - .env
               environment:
                 PYTHONUNBUFFERED: "1"
+                VAULT_ADDR: http://vault:8200
+                VAULT_KV_MOUNT: secret
+                VAULT_DB_SECRET_PATH: database/postgres
               ports:
                 - "8000:8000"
               depends_on:
                 db:
                   condition: service_healthy
+                vault:
+                  condition: service_healthy
+                vault-init:
+                  condition: service_completed_successfully
 
             db:
               image: postgres:16
@@ -104,11 +119,51 @@ jobs:
                 interval: 5s
                 timeout: 5s
                 retries: 10
+
+            vault:
+              image: hashicorp/vault:1.17
+              container_name: devops_hw_3_vault
+              cap_add:
+                - IPC_LOCK
+              env_file:
+                - .env
+              environment:
+                VAULT_DEV_ROOT_TOKEN_ID: $${VAULT_TOKEN}
+                VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+              ports:
+                - "8200:8200"
+              command: server -dev
+              healthcheck:
+                test: ["CMD-SHELL", "VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null 2>&1"]
+                interval: 5s
+                timeout: 5s
+                retries: 20
+
+            vault-init:
+              image: hashicorp/vault:1.17
+              container_name: devops_hw_3_vault_init
+              env_file:
+                - .env
+              environment:
+                VAULT_ADDR: http://vault:8200
+                VAULT_KV_MOUNT: secret
+                VAULT_DB_SECRET_PATH: database/postgres
+              volumes:
+                - ./vault/init-vault.sh:/vault/init-vault.sh:ro
+              entrypoint: ["/bin/sh", "/vault/init-vault.sh"]
+              depends_on:
+                vault:
+                  condition: service_healthy
+              restart: "no"
           EOF
 
       - name: Start services with docker-compose
         run: |
           docker compose -f docker-compose.cd.yml up -d
+
+      - name: Show Vault init logs
+        run: |
+          docker compose -f docker-compose.cd.yml logs vault-init
 
       - name: Wait for API startup
         run: |
@@ -122,10 +177,10 @@ jobs:
             sleep 2
           done
 
-          docker logs diabetes-api
+          docker logs devops_hw_3_api
           exit 1
 
-      - name: Run API and database functional tests
+      - name: Run API, Vault and database functional tests
         run: |
           python - <<'PY'
           import json
@@ -145,7 +200,7 @@ jobs:
           assert db_health_data["database"] == "connected"
 
           payload = {
-              "patient_code": "CI-PAT-001",
+              "patient_code": "CI-LAB3-PAT-001",
               "pregnancies": 6,
               "glucose": 148,
               "blood_pressure": 72,
@@ -174,7 +229,7 @@ jobs:
           if predict_data["probability"] is not None:
               assert 0 <= predict_data["probability"] <= 1
 
-          print("Functional API tests passed")
+          print("Functional API tests with Vault passed")
           print(predict_data)
           PY
 
@@ -208,7 +263,12 @@ jobs:
       - name: Show API logs
         if: always()
         run: |
-          docker logs diabetes-api || true
+          docker logs devops_hw_3_api || true
+
+      - name: Show Vault logs
+        if: always()
+        run: |
+          docker logs devops_hw_3_vault || true
 
       - name: Stop services
         if: always()
