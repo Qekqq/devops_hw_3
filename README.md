@@ -1,49 +1,50 @@
-# DevOps HW 2 — Diabetes Prediction API with PostgreSQL
+# DevOps HW 3 — Diabetes Prediction API with Hashicorp Vault
 
 ## 1. Описание проекта
 
-Проект реализован в рамках лабораторной работы №2 по курсу DevOps.
+Проект выполнен в рамках лабораторной работы №3 по дисциплине «Инфраструктура больших данных».
 
-Тема лабораторной работы: **«Взаимодействие с источниками данных»**.
+Тема лабораторной работы: **«Размещение секретов в хранилище»**.
 
-Цель работы — реализовать взаимодействие сервиса машинного обучения с базой данных, обеспечить отсутствие явно прописанных секретов в исходном коде, переиспользовать CI/CD pipeline и проверить работу приложения через Docker Compose.
+Цель работы — реализовать хранение секретов в специализированном хранилище и настроить взаимодействие сервиса машинного обучения с этим хранилищем.
 
-В качестве источника данных по варианту используется **PostgreSQL**.
+В качестве хранилища секретов используется **Hashicorp Vault**.
 
-Проект представляет собой API-сервис для предсказания риска диабета на основе медицинских признаков пациента. Модель машинного обучения обёрнута в FastAPI-сервис, контейнеризована через Docker и запускается совместно с PostgreSQL через Docker Compose.
+Проект основан на лабораторной работе №2. В предыдущей версии был реализован FastAPI-сервис машинного обучения, PostgreSQL-база данных, сохранение результатов прогнозирования и CI/CD pipeline. В лабораторной работе №3 проект был расширен: параметры подключения к PostgreSQL теперь размещаются в Vault, а API-сервис получает их из Vault при обращении к базе данных.
 
 ## 2. Ссылки
 
 GitHub repository:
 
 ```text
-https://github.com/Qekqq/devops_hw_2
+https://github.com/Qekqq/devops_hw_3
 ```
 
 DockerHub image:
 
 ```text
-https://hub.docker.com/repository/docker/qekqq/devops_hw_2_api/general
+https://hub.docker.com/repository/docker/qekqq/devops_hw_3_api/general
 ```
 
 Docker image name:
 
 ```text
-qekqq/devops_hw_2_api
+qekqq/devops_hw_3_api
 ```
 
 ## 3. Основная функциональность
 
 В проекте реализовано:
 
-* FastAPI-сервис для инференса ML-модели;
+* FastAPI API-сервис для инференса ML-модели;
 * PostgreSQL-база данных для хранения данных проекта;
-* схема БД с таблицами для пользователей, пациентов, датасетов, моделей и истории прогнозов;
-* сохранение результатов работы модели в таблицу `prediction_history`;
-* загрузка обработанных train/valid/test данных в таблицы `datasets` и `dataset_samples`;
-* хранение параметров подключения к БД через переменные окружения;
-* Docker Compose для запуска API и PostgreSQL;
-* CI pipeline для тестирования, сборки и публикации Docker image;
+* Hashicorp Vault для хранения секретов подключения к БД;
+* init-контейнер `vault-init` для записи секретов PostgreSQL в Vault;
+* получение параметров подключения к PostgreSQL через Vault;
+* сохранение результата работы модели в таблицу `prediction_history`;
+* загрузка обработанного датасета в таблицы `datasets` и `dataset_samples`;
+* Docker Compose для запуска API, PostgreSQL, Vault и vault-init;
+* CI pipeline для тестирования, сборки Docker image и публикации в DockerHub;
 * CD pipeline для запуска контейнеров и функционального тестирования;
 * автоматизированные тесты через pytest.
 
@@ -60,14 +61,40 @@ qekqq/devops_hw_2_api
 * scikit-learn;
 * SQLAlchemy;
 * psycopg2-binary;
+* hvac;
 * PostgreSQL 16;
+* Hashicorp Vault;
 * Docker;
 * Docker Compose;
 * pytest;
 * GitHub Actions;
 * DockerHub.
 
-## 5. Структура проекта
+## 5. Архитектура проекта
+
+Архитектура лабораторной работы №3:
+
+```text
+GitHub Secrets / local .env
+        ↓
+vault-init
+        ↓
+Hashicorp Vault
+        ↓
+FastAPI service
+        ↓
+PostgreSQL
+```
+
+Логика работы:
+
+1. PostgreSQL запускается как отдельный контейнер.
+2. Vault запускается как отдельный контейнер в dev-режиме.
+3. Контейнер `vault-init` получает параметры PostgreSQL из переменных окружения и записывает их в Vault.
+4. FastAPI-сервис при обращении к БД читает параметры подключения из Vault.
+5. После этого API подключается к PostgreSQL и сохраняет результат работы модели.
+
+## 6. Структура проекта
 
 ```text
 .
@@ -95,6 +122,9 @@ qekqq/devops_hw_2_api
 │   │   ├── load_dataset.py
 │   │   ├── models.py
 │   │   └── repositories.py
+│   ├── secrets/
+│   │   ├── __init__.py
+│   │   └── vault_client.py
 │   ├── app.py
 │   ├── config.py
 │   ├── data_preprocessing.py
@@ -108,7 +138,10 @@ qekqq/devops_hw_2_api
 │   ├── test_data_preprocessing.py
 │   ├── test_predict.py
 │   └── test_train.py
+├── vault/
+│   └── init-vault.sh
 ├── .dockerignore
+├── .env.example
 ├── .gitignore
 ├── config.ini
 ├── Dockerfile
@@ -117,59 +150,28 @@ qekqq/devops_hw_2_api
 └── requirements.txt
 ```
 
-## 6. Конфигурация проекта
+## 7. Конфигурация окружения
 
-Основная конфигурация проекта находится в файле `config.ini`.
+В проекте используется `.env.example` как шаблон локальной конфигурации.
 
-В рамках лабораторной работы №2 признаки и метрики были приведены к единому формату именования.
-
-Используемые признаки:
-
-```text
-pregnancies
-glucose
-blood_pressure
-skin_thickness
-insulin
-bmi
-diabetes_pedigree_function
-age
-```
-
-Целевая переменная:
-
-```text
-outcome
-```
-
-Используемые метрики:
-
-```text
-accuracy_score
-precision_score
-recall_score
-f1_score
-```
-
-## 7. Переменные окружения
-
-Параметры подключения к PostgreSQL не хранятся в исходном коде. Они передаются через переменные окружения.
-
-Для локального запуска необходимо создать файл `.env` в корне проекта.
-
-Пример `.env`:
+Пример `.env.example`:
 
 ```env
 POSTGRES_HOST=db
 POSTGRES_PORT=5432
 POSTGRES_DB=diabetes
 POSTGRES_USER=diabetes_owner
-POSTGRES_PASSWORD=your_local_password
+POSTGRES_PASSWORD=change_me
+
+VAULT_ADDR=http://vault:8200
+VAULT_TOKEN=change_me
+VAULT_KV_MOUNT=secret
+VAULT_DB_SECRET_PATH=database/postgres
 ```
 
-Файл `.env` не должен попадать в Git.
+Файл `.env` создаётся локально и не должен попадать в Git.
 
-В GitHub Actions аналогичные значения хранятся в Repository Secrets:
+В GitHub Actions значения передаются через Repository Secrets:
 
 ```text
 DOCKERHUB_USERNAME
@@ -177,72 +179,132 @@ DOCKERHUB_TOKEN
 POSTGRES_DB
 POSTGRES_USER
 POSTGRES_PASSWORD
+VAULT_TOKEN
 ```
 
-## 8. База данных PostgreSQL
+## 8. Hashicorp Vault
 
-В проекте используется PostgreSQL 16.
+В лабораторной работе №3 добавлен сервис Hashicorp Vault.
 
-Схема БД создаётся автоматически при первом запуске контейнера PostgreSQL через SQL-скрипты из директории `db/`.
-
-Файлы инициализации:
+Vault запускается в `docker-compose.yml` как отдельный контейнер:
 
 ```text
-db/01_schema.sql
-db/02_seed.sql
+devops_hw_3_vault
 ```
 
-Основные таблицы:
+Для инициализации Vault используется отдельный контейнер:
 
 ```text
-users
-patients
-datasets
-dataset_samples
-model_versions
-prediction_history
-prediction_feedback
+devops_hw_3_vault_init
 ```
 
-Таблица `model_versions` хранит сведения о версии модели, метриках и роли модели. В рамках проекта seed-скрипт добавляет champion-модель:
+Он выполняет скрипт:
 
 ```text
-LogisticRegressionTuned
+vault/init-vault.sh
 ```
 
-Таблица `prediction_history` хранит результаты вызова `/predict`.
+Скрипт записывает параметры подключения к PostgreSQL в Vault по пути:
 
-Таблица `dataset_samples` хранит подготовленные train/valid/test строки датасета.
+```text
+secret/data/database/postgres
+```
 
-## 9. Запуск через Docker Compose
+В Vault записываются следующие параметры:
 
-Для запуска приложения и базы данных используется Docker Compose.
+```text
+POSTGRES_HOST
+POSTGRES_PORT
+POSTGRES_DB
+POSTGRES_USER
+POSTGRES_PASSWORD
+```
 
-Команда запуска:
+После успешной записи секретов init-контейнер завершает работу со статусом `Exited (0)`.
+
+## 9. Получение секретов в приложении
+
+Для взаимодействия с Vault реализован файл:
+
+```text
+src/secrets/vault_client.py
+```
+
+Он использует библиотеку `hvac` и читает секреты из Vault.
+
+Файл:
+
+```text
+src/db/database.py
+```
+
+был обновлён. Теперь он не читает параметры PostgreSQL напрямую из `.env`, а получает их через функцию:
+
+```text
+get_database_secrets()
+```
+
+После получения секретов формируется SQLAlchemy connection URL, создаётся engine и открывается сессия для работы с PostgreSQL.
+
+Таким образом, исходный код не содержит логин, пароль, адрес, порт базы данных или токены доступа.
+
+## 10. Запуск проекта через Docker Compose
+
+Запуск контейнеров:
 
 ```powershell
 docker compose up -d --build
 ```
 
-Проверить состояние контейнеров:
+Проверка контейнеров:
 
 ```powershell
 docker compose ps
 ```
 
-Остановить контейнеры:
+Ожидаемые сервисы:
+
+```text
+devops_hw_3_api
+devops_hw_3_db
+devops_hw_3_vault
+devops_hw_3_vault_init
+```
+
+Контейнер `devops_hw_3_vault_init` после выполнения может быть завершён со статусом `Exited (0)`. Это нормальное поведение, так как он нужен только для записи секретов в Vault.
+
+Остановка контейнеров:
 
 ```powershell
 docker compose down
 ```
 
-Остановить контейнеры и удалить volume PostgreSQL:
+Остановка контейнеров с удалением volume PostgreSQL:
 
 ```powershell
 docker compose down -v
 ```
 
-## 10. API endpoints
+## 11. Проверка Vault init
+
+Посмотреть логи init-контейнера:
+
+```powershell
+docker compose logs vault-init
+```
+
+Ожидаемый результат:
+
+```text
+Waiting for Vault...
+Vault is available
+Writing PostgreSQL secrets to Vault...
+PostgreSQL secrets were written to Vault
+```
+
+Эти логи подтверждают, что параметры PostgreSQL были записаны в Hashicorp Vault.
+
+## 12. API endpoints
 
 ### GET `/health`
 
@@ -267,6 +329,8 @@ Invoke-RestMethod http://localhost:8000/health
 
 Проверяет подключение API к PostgreSQL.
 
+В ЛР3 этот endpoint подтверждает, что сервис смог получить параметры подключения к БД из Vault и подключиться к PostgreSQL.
+
 Пример запроса:
 
 ```powershell
@@ -290,7 +354,7 @@ Invoke-RestMethod http://localhost:8000/db/health
 
 ```json
 {
-  "patient_code": "PAT-001",
+  "patient_code": "LAB3-PAT-001",
   "pregnancies": 6,
   "glucose": 148,
   "blood_pressure": 72,
@@ -312,17 +376,17 @@ Invoke-RestMethod http://localhost:8000/db/health
 }
 ```
 
-После успешного вызова `/predict` запись сохраняется в таблицу `prediction_history`.
+После выполнения запроса результат сохраняется в таблицу `prediction_history`.
 
-## 11. Проверка записи прогноза в БД
+## 13. Проверка записи прогноза в PostgreSQL
 
-Подключиться к PostgreSQL:
+Подключение к PostgreSQL:
 
 ```powershell
-docker exec -it devops_hw_2_db psql -U diabetes_owner -d diabetes
+docker exec -it devops_hw_3_db psql -U diabetes_owner -d diabetes
 ```
 
-Проверить последние прогнозы:
+SQL-запрос:
 
 ```sql
 SELECT
@@ -343,39 +407,24 @@ LIMIT 5;
 
 ```text
 id | patient_code_snapshot | prediction | probability | label    | request_source | response_time_ms
-1  | PAT-001               | 1          | 0.81466     | detected | api            | 12
+1  | LAB3-PAT-001          | 1          | 0.81466     | detected | api            | 21
 ```
 
-## 12. Загрузка датасета в PostgreSQL
+## 14. Загрузка датасета в PostgreSQL
 
-Для загрузки подготовленных train/valid/test данных используется скрипт:
+Для загрузки подготовленного датасета используется скрипт:
 
 ```text
 src/db/load_dataset.py
 ```
 
-Скрипт загружает данные из:
-
-```text
-data/processed/train.csv
-data/processed/valid.csv
-data/processed/test.csv
-```
-
-Команда запуска внутри API-контейнера:
+Команда запуска:
 
 ```powershell
 docker compose exec diabetes-api python -m src.db.load_dataset
 ```
 
-Проверка таблицы `datasets`:
-
-```sql
-SELECT id, dataset_name, dataset_version, source_path, created_at
-FROM datasets;
-```
-
-Проверка количества строк по split:
+Проверка количества строк:
 
 ```sql
 SELECT split, COUNT(*) AS rows_count
@@ -392,15 +441,9 @@ valid | 116
 test  | 116
 ```
 
-Суммарно:
+## 15. Локальные тесты
 
-```text
-768 rows
-```
-
-## 13. Локальный запуск тестов
-
-Запуск всех тестов:
+Запуск тестов:
 
 ```powershell
 pytest
@@ -412,7 +455,7 @@ pytest
 20 passed
 ```
 
-Тестами покрыты:
+Проверяется:
 
 ```text
 tests/test_api.py
@@ -421,7 +464,7 @@ tests/test_predict.py
 tests/test_train.py
 ```
 
-## 14. CI pipeline
+## 16. CI pipeline
 
 CI pipeline описан в файле:
 
@@ -429,16 +472,7 @@ CI pipeline описан в файле:
 .github/workflows/ci.yml
 ```
 
-CI запускается при:
-
-```text
-pull_request в main
-push в develop
-push в main
-workflow_dispatch
-```
-
-CI pipeline выполняет:
+CI выполняет:
 
 1. Checkout repository.
 2. Установку Python 3.11.
@@ -447,10 +481,10 @@ CI pipeline выполняет:
 5. Сборку Docker image.
 6. Публикацию Docker image в DockerHub.
 
-Используемый Docker image:
+Docker image:
 
 ```text
-qekqq/devops_hw_2_api
+qekqq/devops_hw_3_api
 ```
 
 Теги:
@@ -460,15 +494,13 @@ latest
 commit_sha
 ```
 
-## 15. CD pipeline
+## 17. CD pipeline
 
 CD pipeline описан в файле:
 
 ```text
 .github/workflows/cd.yml
 ```
-
-CD запускается после успешного CI pipeline через `workflow_run`, а также может быть запущен вручную через `workflow_dispatch`.
 
 CD pipeline выполняет:
 
@@ -478,74 +510,67 @@ CD pipeline выполняет:
 4. Pull Docker image из DockerHub.
 5. Создание `.env` файла на runner.
 6. Создание временного `docker-compose.cd.yml`.
-7. Запуск FastAPI и PostgreSQL через Docker Compose.
-8. Проверку `/health`.
-9. Проверку `/db/health`.
-10. Функциональный тест `/predict`.
-11. Загрузку processed-датасета в PostgreSQL.
-12. Проверку записей в `prediction_history`.
-13. Проверку записей в `dataset_samples`.
-14. Вывод статуса сервисов и логов.
-15. Остановку контейнеров.
+7. Запуск API, PostgreSQL, Vault и vault-init.
+8. Вывод логов `vault-init`.
+9. Проверку `/health`.
+10. Проверку `/db/health`.
+11. Функциональный тест `/predict`.
+12. Загрузку processed-датасета в PostgreSQL.
+13. Проверку записей в `prediction_history`.
+14. Проверку записей в `dataset_samples`.
+15. Вывод логов API и Vault.
+16. Остановку контейнеров.
 
-Таким образом, CD pipeline проверяет не только API, но и полноценную интеграцию сервиса модели с PostgreSQL.
+CD pipeline подтверждает, что сервис работает в контейнерной инфраструктуре и получает параметры подключения к PostgreSQL из Hashicorp Vault.
 
-## 16. Безопасность конфигурации
-
-В исходном коде отсутствуют явно прописанные пары логин/пароль, адрес/порт сервера базы данных и токены доступа.
-
-Параметры подключения к БД передаются через:
-
-```text
-.env
-GitHub Repository Secrets
-environment variables
-```
-
-Файл `src/db/database.py` получает значения из переменных окружения:
-
-```text
-POSTGRES_HOST
-POSTGRES_PORT
-POSTGRES_DB
-POSTGRES_USER
-POSTGRES_PASSWORD
-```
-
-Это позволяет запускать один и тот же код в локальной среде и в GitHub Actions без хранения секретов в репозитории.
-
-## 17. DockerHub
+## 18. DockerHub
 
 Docker image публикуется в DockerHub:
 
 ```text
-qekqq/devops_hw_2_api
+qekqq/devops_hw_3_api
 ```
 
 Команда pull:
 
 ```powershell
-docker pull qekqq/devops_hw_2_api:latest
+docker pull qekqq/devops_hw_3_api:latest
 ```
 
-## 18. Результаты работы
+## 19. Безопасность
 
-В результате лабораторной работы №2 было реализовано:
+В исходном коде отсутствуют явно прописанные:
 
-* взаимодействие FastAPI ML-сервиса с PostgreSQL;
-* сохранение результата работы модели в БД;
-* хранение подготовленных train/valid/test данных в БД;
-* отсутствие хардкода секретов в исходном коде;
-* запуск API и PostgreSQL через Docker Compose;
-* CI pipeline для тестирования, сборки и публикации Docker image;
-* CD pipeline для функционального тестирования API и БД;
-* публикация Docker image в отдельный DockerHub-репозиторий лабораторной работы №2.
+```text
+логин БД
+пароль БД
+адрес БД
+порт БД
+токены доступа
+```
 
-## 19. Вывод
+Секреты передаются через переменные окружения и записываются в Hashicorp Vault. API-сервис получает параметры подключения к PostgreSQL из Vault при создании подключения к базе данных.
 
-В ходе лабораторной работы был расширен ML-сервис Diabetes Prediction API: к приложению была подключена PostgreSQL-база данных, реализовано сохранение результатов инференса модели и загрузка подготовленных датасетов.
+Файл `.env` используется только локально и не добавляется в Git. В GitHub Actions секреты хранятся в Repository Secrets.
 
-Сервис модели взаимодействует с базой данных через SQLAlchemy, параметры подключения передаются через переменные окружения и GitHub Secrets. Приложение запускается через Docker Compose, что обеспечивает воспроизводимость инфраструктуры.
+## 20. Результаты работы
 
-CI/CD pipeline подтверждает корректность проекта: unit-тесты проходят успешно, Docker image публикуется в DockerHub, а CD pipeline запускает API и PostgreSQL, выполняет функциональные проверки `/health`, `/db/health`, `/predict`, а также проверяет наличие записей в таблицах `prediction_history` и `dataset_samples`.
+В результате лабораторной работы №3 было реализовано:
+
+* подключение Hashicorp Vault к проекту;
+* размещение параметров PostgreSQL в Vault;
+* init-контейнер для записи секретов в Vault;
+* Python-клиент для чтения секретов из Vault;
+* получение параметров подключения к БД из Vault;
+* сохранение защищённого обращения API к PostgreSQL;
+* запуск API, PostgreSQL и Vault через Docker Compose;
+* CI/CD pipeline для сборки, публикации Docker image и функционального тестирования;
+* публикация Docker image в отдельный DockerHub-репозиторий ЛР3.
+
+## 21. Вывод
+
+В ходе лабораторной работы №3 ML-сервис Diabetes Prediction API был расширен интеграцией с Hashicorp Vault. Теперь параметры подключения к PostgreSQL не хранятся в исходном коде и не передаются напрямую в приложение как основная конфигурация подключения. Вместо этого они записываются в Vault и считываются API-сервисом при обращении к базе данных.
+
+Система запускается через Docker Compose и включает FastAPI API, PostgreSQL, Hashicorp Vault и init-контейнер для записи секретов. CI/CD pipeline подтверждает корректность проекта: тесты проходят успешно, Docker image публикуется в DockerHub, а CD pipeline запускает контейнеры и проверяет `/health`, `/db/health`, `/predict`, запись прогнозов в БД и загрузку датасета.
+
 
