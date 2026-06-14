@@ -86,8 +86,8 @@ Outcome
 Классы:
 
 ```text
-0 — diabetes_not_detected
-1 — diabetes_detected
+0 — not_detected
+1 — detected
 ```
 
 Используемые признаки:
@@ -281,7 +281,7 @@ POST /predict
 {
   "prediction": 1,
   "probability": 0.8146575280180618,
-  "label": "diabetes_detected"
+  "label": "detected"
 }
 ```
 

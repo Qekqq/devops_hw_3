@@ -59,20 +59,20 @@ def test_model_training_and_evaluation_returns_valid_metrics():
 
     expected_keys = {
         "model_name",
-        "accuracy",
-        "precision",
-        "recall",
-        "f1",
+        "accuracy_score",
+        "precision_score",
+        "recall_score",
+        "f1_score",
         "params",
     }
 
     assert expected_keys.issubset(metrics.keys())
 
     assert metrics["model_name"] == "LogisticRegressionTuned"
-    assert 0 <= metrics["accuracy"] <= 1
-    assert 0 <= metrics["precision"] <= 1
-    assert 0 <= metrics["recall"] <= 1
-    assert 0 <= metrics["f1"] <= 1
+    assert 0 <= metrics["accuracy_score"] <= 1
+    assert 0 <= metrics["precision_score"] <= 1
+    assert 0 <= metrics["recall_score"] <= 1
+    assert 0 <= metrics["f1_score"] <= 1
 
 
 def test_save_model_and_metrics_creates_files(tmp_path):
@@ -107,4 +107,4 @@ def test_save_model_and_metrics_creates_files(tmp_path):
         loaded_metrics = json.load(file)
 
     assert loaded_metrics["model_name"] == "LogisticRegressionTuned"
-    assert "f1" in loaded_metrics
+    assert "f1_score" in loaded_metrics

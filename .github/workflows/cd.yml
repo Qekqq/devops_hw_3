@@ -10,29 +10,44 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: qekqq/mloops_api
+  IMAGE_NAME: qekqq/devops_hw_2_api
   IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'latest' }}
 
 jobs:
-  container-functional-tests:
-    name: Run container functional tests
+  compose-functional-tests:
+    name: Run docker-compose functional tests
     runs-on: ubuntu-latest
 
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
       - name: Log in to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Validate required secrets
+        env:
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          test -n "$POSTGRES_DB"
+          test -n "$POSTGRES_USER"
+          test -n "$POSTGRES_PASSWORD"
+
       - name: Pull Docker image
         run: |
           echo "Pulling image: $IMAGE_NAME:$IMAGE_TAG"
 
           for i in {1..30}; do
-            if docker pull $IMAGE_NAME:$IMAGE_TAG; then
+            if docker pull "$IMAGE_NAME:$IMAGE_TAG"; then
               echo "Image pulled successfully"
               exit 0
             fi
@@ -44,14 +59,61 @@ jobs:
           echo "Failed to pull image: $IMAGE_NAME:$IMAGE_TAG"
           exit 1
 
-      - name: Run Docker container
+      - name: Create environment file
+        env:
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
-          docker run -d --name diabetes-api -p 8000:8000 $IMAGE_NAME:$IMAGE_TAG
+          cat > .env <<EOF
+          POSTGRES_HOST=db
+          POSTGRES_PORT=5432
+          POSTGRES_DB=$POSTGRES_DB
+          POSTGRES_USER=$POSTGRES_USER
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+          EOF
+
+      - name: Create CD docker-compose file
+        run: |
+          cat > docker-compose.cd.yml <<'EOF'
+          services:
+            diabetes-api:
+              image: ${IMAGE_NAME}:${IMAGE_TAG}
+              container_name: diabetes-api
+              env_file:
+                - .env
+              environment:
+                PYTHONUNBUFFERED: "1"
+              ports:
+                - "8000:8000"
+              depends_on:
+                db:
+                  condition: service_healthy
+
+            db:
+              image: postgres:16
+              container_name: devops_hw_2_db
+              env_file:
+                - .env
+              ports:
+                - "5432:5432"
+              volumes:
+                - ./db:/docker-entrypoint-initdb.d:ro
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+                interval: 5s
+                timeout: 5s
+                retries: 10
+          EOF
+
+      - name: Start services with docker-compose
+        run: |
+          docker compose -f docker-compose.cd.yml up -d
 
       - name: Wait for API startup
         run: |
           for i in {1..30}; do
-            if docker exec diabetes-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"; then
+            if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"; then
               echo "API is ready"
               exit 0
             fi
@@ -63,33 +125,35 @@ jobs:
           docker logs diabetes-api
           exit 1
 
-      - name: Run functional API tests inside container
+      - name: Run API and database functional tests
         run: |
-          docker exec -i diabetes-api python - <<'PY'
+          python - <<'PY'
           import json
           import urllib.request
 
-          health_response = urllib.request.urlopen(
-              "http://127.0.0.1:8000/health",
-              timeout=5,
-          )
+          def get_json(url: str) -> dict:
+              response = urllib.request.urlopen(url, timeout=5)
+              assert response.status == 200
+              return json.loads(response.read().decode("utf-8"))
 
-          assert health_response.status == 200
-
-          health_data = json.loads(health_response.read().decode("utf-8"))
-
+          health_data = get_json("http://127.0.0.1:8000/health")
           assert health_data["status"] == "ok"
           assert health_data["service"] == "diabetes-prediction-api"
 
+          db_health_data = get_json("http://127.0.0.1:8000/db/health")
+          assert db_health_data["status"] == "ok"
+          assert db_health_data["database"] == "connected"
+
           payload = {
-              "Pregnancies": 6,
-              "Glucose": 148,
-              "BloodPressure": 72,
-              "SkinThickness": 35,
-              "Insulin": 0,
-              "BMI": 33.6,
-              "DiabetesPedigreeFunction": 0.627,
-              "Age": 50,
+              "patient_code": "CI-PAT-001",
+              "pregnancies": 6,
+              "glucose": 148,
+              "blood_pressure": 72,
+              "skin_thickness": 35,
+              "insulin": 0,
+              "bmi": 33.6,
+              "diabetes_pedigree_function": 0.627,
+              "age": 50,
           }
 
           request = urllib.request.Request(
@@ -100,30 +164,53 @@ jobs:
           )
 
           predict_response = urllib.request.urlopen(request, timeout=5)
-
           assert predict_response.status == 200
 
           predict_data = json.loads(predict_response.read().decode("utf-8"))
 
           assert predict_data["prediction"] in [0, 1]
-          assert predict_data["label"] in [
-              "diabetes_detected",
-              "diabetes_not_detected",
-          ]
+          assert predict_data["label"] in ["detected", "not_detected"]
 
           if predict_data["probability"] is not None:
               assert 0 <= predict_data["probability"] <= 1
 
-          print("Functional container tests passed")
+          print("Functional API tests passed")
           print(predict_data)
           PY
 
-      - name: Show container logs
+      - name: Load processed dataset into PostgreSQL
+        run: |
+          docker compose -f docker-compose.cd.yml exec -T diabetes-api python -m src.db.load_dataset
+
+      - name: Check database records
+        env:
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        run: |
+          PREDICTION_ROWS=$(docker compose -f docker-compose.cd.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM prediction_history;" | tr -d '[:space:]')
+          DATASET_ROWS=$(docker compose -f docker-compose.cd.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM dataset_samples;" | tr -d '[:space:]')
+
+          echo "prediction_history rows: $PREDICTION_ROWS"
+          echo "dataset_samples rows: $DATASET_ROWS"
+
+          test "$PREDICTION_ROWS" -gt 0
+          test "$DATASET_ROWS" -gt 0
+
+          docker compose -f docker-compose.cd.yml exec -T db \
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            -c "SELECT split, COUNT(*) AS rows_count FROM dataset_samples GROUP BY split ORDER BY split;"
+
+      - name: Show service status
+        if: always()
+        run: |
+          docker compose -f docker-compose.cd.yml ps || true
+
+      - name: Show API logs
         if: always()
         run: |
           docker logs diabetes-api || true
 
-      - name: Stop Docker container
+      - name: Stop services
         if: always()
         run: |
-          docker rm -f diabetes-api || true
+          docker compose -f docker-compose.cd.yml down -v || true

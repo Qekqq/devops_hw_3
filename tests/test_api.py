@@ -1,20 +1,66 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from src.app import app
+import src.app as app_module
+from src.db.database import get_db
 
 
-client = TestClient(app)
+class DummyDb:
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+
+class DummyModelVersion:
+    id = 1
+    model_version = "test-model-version"
+
+
+def override_get_db():
+    yield DummyDb()
+
+
+@pytest.fixture(autouse=True)
+def mock_database_layer(monkeypatch):
+    """
+    Mocks database dependency for API unit tests.
+
+    The real database integration is checked separately through docker-compose
+    and /db/health. These tests should validate API behavior only.
+    """
+    monkeypatch.setattr(
+        app_module,
+        "require_champion_model",
+        lambda db: DummyModelVersion(),
+    )
+
+    monkeypatch.setattr(
+        app_module,
+        "save_prediction_history",
+        lambda *args, **kwargs: None,
+    )
+
+    app_module.app.dependency_overrides[get_db] = override_get_db
+
+    yield
+
+    app_module.app.dependency_overrides.clear()
+
+
+client = TestClient(app_module.app)
 
 
 VALID_INPUT = {
-    "Pregnancies": 6,
-    "Glucose": 148,
-    "BloodPressure": 72,
-    "SkinThickness": 35,
-    "Insulin": 0,
-    "BMI": 33.6,
-    "DiabetesPedigreeFunction": 0.627,
-    "Age": 50,
+    "pregnancies": 6,
+    "glucose": 148,
+    "blood_pressure": 72,
+    "skin_thickness": 35,
+    "insulin": 0,
+    "bmi": 33.6,
+    "diabetes_pedigree_function": 0.627,
+    "age": 50,
 }
 
 
@@ -41,7 +87,7 @@ def test_predict_returns_valid_prediction():
     assert "label" in data
 
     assert data["prediction"] in [0, 1]
-    assert data["label"] in ["diabetes_detected", "diabetes_not_detected"]
+    assert data["label"] in ["detected", "not_detected"]
 
     if data["probability"] is not None:
         assert 0 <= data["probability"] <= 1
@@ -49,7 +95,7 @@ def test_predict_returns_valid_prediction():
 
 def test_predict_returns_422_for_missing_required_field():
     invalid_input = VALID_INPUT.copy()
-    invalid_input.pop("Age")
+    invalid_input.pop("age")
 
     response = client.post("/predict", json=invalid_input)
 
@@ -58,7 +104,7 @@ def test_predict_returns_422_for_missing_required_field():
 
 def test_predict_returns_422_for_negative_value():
     invalid_input = VALID_INPUT.copy()
-    invalid_input["Glucose"] = -1
+    invalid_input["glucose"] = -1
 
     response = client.post("/predict", json=invalid_input)
 
@@ -67,7 +113,7 @@ def test_predict_returns_422_for_negative_value():
 
 def test_predict_returns_422_for_invalid_type():
     invalid_input = VALID_INPUT.copy()
-    invalid_input["Age"] = "fifty"
+    invalid_input["age"] = "fifty"
 
     response = client.post("/predict", json=invalid_input)
 
